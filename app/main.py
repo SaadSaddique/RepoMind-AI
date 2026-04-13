@@ -3,16 +3,18 @@ import time
 
 from ingestion.github_loader import load_github_repo
 from config import GITHUB_TOKEN
-from ingestion.splitter import split_documents
-from embeddings.embedding_model import get_embedding_model
-from vectorstore.faiss_store import create_vectorstore, load_vectorstore
-from retrieval.retriever import get_retriever
-from chains.rag_chain import run_rag, get_llm
+
+from ingestion.langchain_splitter import split_documents
+from indexing.llamaindex_store import create_index, get_query_engine
+from llm.llm_model import get_llm
+from chains.rag_chain import run_rag
+
 
 # -------------------------------
 # Page Config
 # -------------------------------
 st.set_page_config(page_title="RepoMind AI", layout="wide")
+
 
 # -------------------------------
 # Custom CSS
@@ -33,6 +35,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # -------------------------------
 # Premium Header
 # -------------------------------
@@ -46,6 +49,7 @@ color: transparent;'>
 <p style='text-align: center;'>🧠 Understand Any GitHub Repository Instantly</p>
 """, unsafe_allow_html=True)
 
+
 # -------------------------------
 # Session State
 # -------------------------------
@@ -58,41 +62,52 @@ if "repo_processed" not in st.session_state:
 if "chunks" not in st.session_state:
     st.session_state.chunks = 0
 
+if "index" not in st.session_state:
+    st.session_state.index = None
+
+
 # -------------------------------
 # Sidebar
 # -------------------------------
 with st.sidebar:
+
     st.markdown("## ⚙️ Controls")
 
     repo_url = st.text_input("🔗 GitHub Repo URL")
 
-    # Show repo name
     if "repo_name" in st.session_state:
         st.markdown(f"### 📂 {st.session_state.repo_name}")
 
-    # Status (KEEP THIS — working fine)
     if st.session_state.repo_processed:
         st.success("✅ Repository Ready")
         st.info(f"📦 Chunks: {st.session_state.chunks}")
 
-    # Process Repo
+    # -------------------------------
+    # Process Repository
+    # -------------------------------
+
     if st.button("📦 Process Repository"):
+
         if not repo_url:
             st.warning("Please enter a repository URL")
+
         else:
             with st.spinner("Fetching & processing repo..."):
+
                 try:
+
                     docs = load_github_repo(repo_url, GITHUB_TOKEN)
 
                     if not docs:
                         st.error("No valid files found")
+
                     else:
+
                         split_docs = split_documents(docs)
 
-                        embedding_model = get_embedding_model()
-                        create_vectorstore(split_docs, embedding_model)
+                        index = create_index(split_docs)
 
-                        # Save repo info
+                        st.session_state.index = index
                         st.session_state.repo_processed = True
                         st.session_state.chunks = len(split_docs)
                         st.session_state.repo_name = repo_url.split("/")[-1]
@@ -102,29 +117,46 @@ with st.sidebar:
                 except Exception as e:
                     st.error(str(e))
 
-    # Reset Repo
+
+    # -------------------------------
+    # Reset Repository
+    # -------------------------------
+
     if st.button("🔄 Reset Repository"):
+
         st.session_state.repo_processed = False
         st.session_state.messages = []
         st.session_state.chunks = 0
+        st.session_state.index = None
+
         if "repo_name" in st.session_state:
             del st.session_state.repo_name
+
         st.success("Reset complete")
 
+
+    # -------------------------------
     # Clear Chat
+    # -------------------------------
+
     if st.button("🗑️ Clear Chat"):
+
         st.session_state.messages = []
         st.success("Chat cleared")
+
 
 # -------------------------------
 # Welcome Message
 # -------------------------------
+
 if not st.session_state.messages:
     st.markdown("### 👋 Ask me anything about your repository!")
+
 
 # -------------------------------
 # Example Questions
 # -------------------------------
+
 st.markdown("### 💡 Try asking:")
 
 col1, col2 = st.columns(2)
@@ -140,31 +172,39 @@ else:
 if col2.button("🏗 Explain architecture"):
     user_input = quick_q2
 
+
 # -------------------------------
 # Chat Display
 # -------------------------------
+
 for msg in st.session_state.messages:
+
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+
 
 # -------------------------------
 # Chat Input
 # -------------------------------
+
 typed_input = st.chat_input("Ask something about the repository...")
 
-# Prioritize typed input over button input
 if typed_input:
     user_input = typed_input
+
 
 # -------------------------------
 # Handle Query
 # -------------------------------
+
 if user_input:
 
     if not st.session_state.repo_processed:
+
         st.warning("⚠️ Please process a repository first!")
+
     else:
-        # Save user message
+
         st.session_state.messages.append({
             "role": "user",
             "content": user_input
@@ -173,36 +213,38 @@ if user_input:
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Assistant Response
         with st.chat_message("assistant"):
-            with st.spinner("🤖 Thinking... analyzing code..."):
-                try:
-                    embedding_model = get_embedding_model()
-                    db = load_vectorstore(embedding_model)
 
-                    retriever = get_retriever(db)
+            with st.spinner("🤖 Thinking... analyzing code..."):
+
+                try:
+
+                    query_engine = get_query_engine(st.session_state.index)
+
                     llm = get_llm()
 
-                    # ⏱ Measure response time
                     start = time.time()
-                    answer = run_rag(user_input, retriever, llm)
+
+                    answer = run_rag(user_input, query_engine, llm)
+
                     end = time.time()
 
-                    # Answer
                     st.markdown(f"💡 **Answer:**\n\n{answer}")
 
                     st.caption(f"⏱ Response time: {round(end - start, 2)}s")
 
-                    # 🔍 Sources & Context (ENHANCED)
-                    with st.expander("📎 Sources & Retrieved Context"):
-                        docs = retriever.invoke(user_input)
 
-                        for i, doc in enumerate(docs):
-                            st.markdown(f"**📄 Source {i+1}**")
-                            st.code(doc.page_content[:300], language="python")
-                            st.divider()
+                    # -------------------------------
+                    # Retrieved Sources
+                    # -------------------------------
 
-                    # Save response
+                    with st.expander("📎 Retrieved Context"):
+
+                        response = query_engine.query(user_input)
+
+                        st.markdown(str(response))
+
+
                     st.session_state.messages.append({
                         "role": "assistant",
                         "content": answer

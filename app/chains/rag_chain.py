@@ -1,13 +1,9 @@
-from langchain_openai import ChatOpenAI
+def run_rag(query, query_engine, llm):
 
-def get_llm():
-    return ChatOpenAI(temperature=0)
+    # LlamaIndex retrieval
+    response = query_engine.query(query)
 
-def run_rag(query, retriever, llm):
-    # NEW API
-    docs = retriever.invoke(query)
-
-    context = "\n\n".join([doc.page_content for doc in docs])
+    context = str(response)
 
     prompt = f"""
 You are a helpful AI assistant.
@@ -23,6 +19,6 @@ Question:
 Answer:
 """
 
-    response = llm.invoke(prompt)
+    final_response = llm.invoke(prompt)
 
-    return response.content
+    return final_response.content

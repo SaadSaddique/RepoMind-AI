@@ -1,27 +1,35 @@
+# LangChain core packages
 langchain
-langchain-community
-langchain-core
+langchain-openai
+langchain-text-splitters
 
-faiss-cpu
+# LlamaIndex packages
+llama-index
+llama-index-llms-openai
+llama-index-embeddings-huggingface
 
+# Transformers and embeddings
 sentence-transformers
-
-openai
-huggingface_hub
 transformers
 accelerate
+huggingface_hub
 
+# OpenAI SDK
+openai
+
+# Streamlit UI
 streamlit
-
 python-dotenv
-
 tqdm
 
+# Pydantic
 pydantic
+typing-extensions
+annotated-types
+pydantic-core
+typing-inspection
 
+# Utilities
 gitpython
-
-unstructured
-beautifulsoup4
-
 tiktoken
+beautifulsoup4
